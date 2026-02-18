@@ -37,7 +37,7 @@ export default function BottomSheet({ open, onClose, title, children }: BottomSh
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-black/70"
+            className="fixed inset-0 z-[60] bg-black/70"
           />
 
           {/* Sheet */}
@@ -55,7 +55,7 @@ export default function BottomSheet({ open, onClose, title, children }: BottomSh
             onDragEnd={(_, info) => {
               if (info.offset.y > 80 || info.velocity.y > 500) onClose()
             }}
-            className="fixed bottom-0 left-0 right-0 z-50 safe-bottom rounded-t-[20px]"
+            className="fixed bottom-0 left-0 right-0 z-[60] safe-bottom rounded-t-[20px]"
             style={{
               background: '#111111',
               border: '1px solid rgba(255,255,255,0.08)',

@@ -194,8 +194,12 @@ export default function SalesPage() {
       {/* Sticky footer */}
       {cart.length > 0 && can('sales', 'create') && (
         <div
-          className="fixed bottom-16 left-0 right-0 safe-bottom px-4 py-3"
-          style={{ background: 'rgba(10,10,10,0.95)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          className="fixed left-0 right-0 z-[55] px-4 py-3"
+          style={{
+            bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+            background: 'rgba(10,10,10,0.95)',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+          }}
         >
           <div className="mb-2 flex justify-between text-sm">
             <span className="text-[#888]">Subtotal</span>

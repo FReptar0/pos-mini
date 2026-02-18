@@ -12,8 +12,9 @@ export default function FAB({ onClick, label = 'Agregar' }: FABProps) {
     <button
       onClick={onClick}
       aria-label={label}
-      className="fixed bottom-24 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform active:scale-90"
+      className="fixed right-4 z-[55] flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform active:scale-90"
       style={{
+        bottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))',
         background: '#10b981',
         boxShadow: '0 0 24px rgba(16,185,129,0.4)',
       }}
