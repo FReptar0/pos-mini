@@ -6,19 +6,33 @@ import { useInventoryStore } from '@/stores/inventoryStore'
 import { useSalesStore } from '@/stores/salesStore'
 import { useCashStore } from '@/stores/cashStore'
 import { usePermissions } from '@/hooks/usePermissions'
-import ProductSearch from '@/components/ui/ProductSearch'
+import ProductGrid from '@/components/ui/ProductGrid'
+import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import BottomSheet from '@/components/ui/BottomSheet'
 import GlassCard from '@/components/ui/GlassCard'
-import EmptyState from '@/components/ui/EmptyState'
+import CurrencyInput from '@/components/ui/CurrencyInput'
 import type { Product, SaleItem } from '@/lib/supabase'
 import { formatCurrency, today } from '@/utils/formatters'
-import { ShoppingCart, Minus, Plus, X, CalendarDays } from 'lucide-react'
+import { barcodeLookup } from '@/utils/barcodeLookup'
+import { Minus, Plus, X, CalendarDays } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 
 type CartItem = {
   product: Product
   quantity: number
   sale_price: number
+}
+
+type ScannedProductForm = {
+  name: string
+  sku: string
+  category: string
+  cost_price: string
+  sale_price: string
+}
+
+const emptyScannedForm: ScannedProductForm = {
+  name: '', sku: '', category: 'General', cost_price: '', sale_price: '',
 }
 
 export default function SalesPage() {
@@ -30,6 +44,9 @@ export default function SalesPage() {
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [newProductOpen, setNewProductOpen] = useState(false)
+  const [scannedForm, setScannedForm] = useState<ScannedProductForm>(emptyScannedForm)
 
   useEffect(() => {
     if (workspaceId) fetchProducts(workspaceId)
@@ -67,6 +84,71 @@ export default function SalesPage() {
         i.product.id === productId ? { ...i, sale_price: parseFloat(price) || 0 } : i
       )
     )
+  }
+
+  async function handleSalesScan(code: string) {
+    setScanOpen(false)
+
+    // Check if SKU already in inventory
+    const existing = products.find((p) => p.sku === code)
+    if (existing) {
+      addToCart(existing)
+      toast.success(`${existing.name} agregado al carrito`)
+      return
+    }
+
+    // Unknown SKU — look up online
+    const toastId = toast.loading('Buscando producto...')
+    const info = await barcodeLookup(code)
+    toast.dismiss(toastId)
+
+    setScannedForm({
+      name: info.name ?? '',
+      sku: code,
+      category: info.category ?? 'General',
+      cost_price: '',
+      sale_price: '',
+    })
+    setNewProductOpen(true)
+
+    if (info.name) {
+      toast.success('Producto encontrado — completa el precio')
+    } else {
+      toast('Producto no encontrado en línea — ingresa los datos', { icon: '🔍' })
+    }
+  }
+
+  async function handleSaveScannedProduct() {
+    if (!workspaceId) return
+    if (!scannedForm.name || !scannedForm.sale_price) {
+      toast.error('Nombre y precio de venta requeridos')
+      return
+    }
+
+    const { add } = useInventoryStore.getState()
+    const { error } = await add({
+      name: scannedForm.name,
+      sku: scannedForm.sku || null,
+      category: scannedForm.category || 'General',
+      cost_price: parseFloat(scannedForm.cost_price) || 0,
+      sale_price: parseFloat(scannedForm.sale_price),
+      stock: 0,
+      min_stock: 5,
+    }, workspaceId)
+
+    if (error) { toast.error(error); return }
+
+    // Find newly added product by SKU and add to cart
+    const added = useInventoryStore.getState().products.find((p) => p.sku === scannedForm.sku)
+    if (added) {
+      addToCart(added)
+      toast.success(`${added.name} agregado al carrito`)
+    } else {
+      toast.success('Producto guardado en inventario')
+    }
+
+    setNewProductOpen(false)
+    setScannedForm(emptyScannedForm)
   }
 
   const subtotal = cart.reduce((s, i) => s + i.sale_price * i.quantity, 0)
@@ -120,9 +202,14 @@ export default function SalesPage() {
     <div className="flex flex-col gap-3 p-4 pb-36 animate-[fade-up_0.3s_ease-out]">
       <Toaster position="top-center" toastOptions={{ style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }} />
 
-      {/* Search — only if can create sales */}
+      {/* Product grid — only if can create sales */}
       {can('sales', 'create') && (
-        <ProductSearch products={products} onSelect={addToCart} placeholder="Buscar producto para vender..." />
+        <ProductGrid
+          products={products}
+          cart={cart}
+          onSelect={addToCart}
+          onScanRequest={() => setScanOpen(true)}
+        />
       )}
 
       {/* Bulk daily button */}
@@ -137,13 +224,7 @@ export default function SalesPage() {
       )}
 
       {/* Cart */}
-      {cart.length === 0 ? (
-        <EmptyState
-          icon={ShoppingCart}
-          title="Carrito vacío"
-          description={can('sales', 'create') ? 'Busca un producto para agregar a la venta' : 'Solo visualización de ventas'}
-        />
-      ) : (
+      {cart.length > 0 && (
         <div className="flex flex-col gap-2">
           {cart.map((item) => (
             <GlassCard key={item.product.id} className="flex flex-col gap-2">
@@ -233,6 +314,75 @@ export default function SalesPage() {
         workspaceId={workspaceId ?? ''}
         onComplete={() => { setBulkOpen(false); if (workspaceId) fetchProducts(workspaceId) }}
       />
+
+      {/* Barcode scanner */}
+      <BarcodeScanner
+        open={scanOpen}
+        onScan={handleSalesScan}
+        onClose={() => setScanOpen(false)}
+      />
+
+      {/* New product from scan sheet */}
+      <BottomSheet
+        open={newProductOpen}
+        onClose={() => setNewProductOpen(false)}
+        title="Nuevo producto escaneado"
+      >
+        <SalesProductFormFields form={scannedForm} setForm={setScannedForm} />
+        <button
+          onClick={handleSaveScannedProduct}
+          className="mt-4 h-12 w-full rounded-xl bg-[#10b981] text-sm font-semibold text-white transition-all active:scale-95"
+        >
+          Guardar y agregar al carrito
+        </button>
+      </BottomSheet>
+    </div>
+  )
+}
+
+/* ─── Scanned product form fields ─── */
+function SalesProductFormFields({
+  form,
+  setForm,
+}: {
+  form: ScannedProductForm
+  setForm: (f: ScannedProductForm) => void
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium uppercase tracking-wider text-[#888]">Nombre *</label>
+        <input
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Nombre del producto"
+          className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:border-[#10b981]/50 focus:outline-none"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium uppercase tracking-wider text-[#888]">SKU</label>
+          <input
+            value={form.sku}
+            onChange={(e) => setForm({ ...form, sku: e.target.value })}
+            placeholder="Opcional"
+            className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium uppercase tracking-wider text-[#888]">Categoría</label>
+          <input
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            placeholder="General"
+            className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <CurrencyInput label="Precio de costo" value={form.cost_price} onChange={(v) => setForm({ ...form, cost_price: v })} />
+        <CurrencyInput label="Precio de venta *" value={form.sale_price} onChange={(v) => setForm({ ...form, sale_price: v })} />
+      </div>
     </div>
   )
 }

@@ -15,7 +15,9 @@ import CurrencyInput from '@/components/ui/CurrencyInput'
 import { stockStatus, margin } from '@/utils/calculations'
 import { today } from '@/utils/formatters'
 import type { Product } from '@/lib/supabase'
-import { Package, Search, Plus, Trash2 } from 'lucide-react'
+import BarcodeScanner from '@/components/ui/BarcodeScanner'
+import { barcodeLookup } from '@/utils/barcodeLookup'
+import { Package, Search, Plus, Trash2, ScanLine } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 
 type ProductForm = {
@@ -40,6 +42,7 @@ export default function InventoryPage() {
   const { can } = usePermissions()
 
   const [search, setSearch] = useState('')
+  const [scanOpen, setScanOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -142,6 +145,26 @@ export default function InventoryPage() {
     setDetailOpen(false)
   }
 
+  async function handleInventoryScan(code: string) {
+    setScanOpen(false)
+    setForm((prev) => ({ ...prev, sku: code }))
+
+    const toastId = toast.loading('Buscando información del producto...')
+    const info = await barcodeLookup(code)
+    toast.dismiss(toastId)
+
+    if (info.name) {
+      setForm((prev) => ({
+        ...prev,
+        name: info.name!,
+        category: info.category ?? prev.category,
+      }))
+      toast.success('Producto encontrado — verifica los datos')
+    } else {
+      toast('SKU asignado — producto no encontrado en línea', { icon: '📦' })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3 p-4 animate-[fade-up_0.3s_ease-out]">
       <Toaster position="top-center" toastOptions={{ style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }} />
@@ -204,7 +227,7 @@ export default function InventoryPage() {
 
       {/* Add product sheet */}
       <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Nuevo producto">
-        <ProductFormFields form={form} setForm={setForm} />
+        <ProductFormFields form={form} setForm={setForm} onScanSku={() => setScanOpen(true)} />
         <button
           onClick={handleAdd}
           className="mt-4 h-12 w-full rounded-xl bg-[#10b981] text-sm font-semibold text-white transition-all active:scale-95"
@@ -293,6 +316,12 @@ export default function InventoryPage() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
       />
+
+      <BarcodeScanner
+        open={scanOpen}
+        onScan={handleInventoryScan}
+        onClose={() => setScanOpen(false)}
+      />
     </div>
   )
 }
@@ -300,9 +329,11 @@ export default function InventoryPage() {
 function ProductFormFields({
   form,
   setForm,
+  onScanSku,
 }: {
   form: ProductForm
   setForm: (f: ProductForm) => void
+  onScanSku?: () => void
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -318,12 +349,23 @@ function ProductFormFields({
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium uppercase tracking-wider text-[#888]">SKU</label>
-          <input
-            value={form.sku}
-            onChange={(e) => setForm({ ...form, sku: e.target.value })}
-            placeholder="Opcional"
-            className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
-          />
+          <div className="flex gap-2">
+            <input
+              value={form.sku}
+              onChange={(e) => setForm({ ...form, sku: e.target.value })}
+              placeholder="Opcional"
+              className="h-12 flex-1 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
+            />
+            {onScanSku && (
+              <button
+                type="button"
+                onClick={onScanSku}
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[#10b981] active:bg-white/10"
+              >
+                <ScanLine size={18} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium uppercase tracking-wider text-[#888]">Categoría</label>
