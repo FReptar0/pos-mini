@@ -17,7 +17,7 @@ import { today } from '@/utils/formatters'
 import type { Product } from '@/lib/supabase'
 import BarcodeScanner from '@/components/ui/BarcodeScanner'
 import { barcodeLookup } from '@/utils/barcodeLookup'
-import { Package, Search, Plus, Trash2, ScanLine } from 'lucide-react'
+import { Package, Search, Plus, Trash2, ScanLine, X, ChevronDown } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 
 type ProductForm = {
@@ -54,6 +54,8 @@ export default function InventoryPage() {
   useEffect(() => {
     if (workspaceId) fetch(workspaceId)
   }, [workspaceId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const existingCategories = Array.from(new Set(products.map((p) => p.category)))
 
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -227,7 +229,7 @@ export default function InventoryPage() {
 
       {/* Add product sheet */}
       <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Nuevo producto">
-        <ProductFormFields form={form} setForm={setForm} onScanSku={() => setScanOpen(true)} />
+        <ProductFormFields form={form} setForm={setForm} onScanSku={() => setScanOpen(true)} categories={existingCategories} />
         <button
           onClick={handleAdd}
           className="mt-4 h-12 w-full rounded-xl bg-[#10b981] text-sm font-semibold text-white transition-all active:scale-95"
@@ -274,7 +276,7 @@ export default function InventoryPage() {
             {/* Edit fields — only admin/manager */}
             {can('products', 'edit') && (
               <>
-                <ProductFormFields form={form} setForm={setForm} />
+                <ProductFormFields form={form} setForm={setForm} categories={existingCategories} />
                 <div className="flex gap-2">
                   {can('products', 'delete') && (
                     <button
@@ -330,11 +332,30 @@ function ProductFormFields({
   form,
   setForm,
   onScanSku,
+  categories = [],
 }: {
   form: ProductForm
   setForm: (f: ProductForm) => void
   onScanSku?: () => void
+  categories?: string[]
 }) {
+  const [isNewCategory, setIsNewCategory] = useState(false)
+  const knownCategories = Array.from(new Set(['General', ...categories])).sort()
+
+  function handleCategorySelect(value: string) {
+    if (value === '__new__') {
+      setIsNewCategory(true)
+      setForm({ ...form, category: '' })
+    } else {
+      setForm({ ...form, category: value })
+    }
+  }
+
+  function cancelNewCategory() {
+    setIsNewCategory(false)
+    setForm({ ...form, category: 'General' })
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
@@ -346,36 +367,62 @@ function ProductFormFields({
           className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:border-[#10b981]/50 focus:outline-none"
         />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium uppercase tracking-wider text-[#888]">SKU</label>
+      {/* SKU — full-width so scan button has room */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium uppercase tracking-wider text-[#888]">SKU</label>
+        <div className="flex gap-2">
+          <input
+            value={form.sku}
+            onChange={(e) => setForm({ ...form, sku: e.target.value })}
+            placeholder="Opcional"
+            className="h-12 flex-1 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
+          />
+          {onScanSku && (
+            <button
+              type="button"
+              onClick={onScanSku}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[#10b981] active:bg-white/10"
+            >
+              <ScanLine size={18} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium uppercase tracking-wider text-[#888]">Categoría</label>
+        {!isNewCategory ? (
+          <div className="relative">
+            <select
+              value={form.category}
+              onChange={(e) => handleCategorySelect(e.target.value)}
+              className="h-12 w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 pr-10 text-sm text-white focus:border-[#10b981]/50 focus:outline-none"
+              style={{ colorScheme: 'dark' }}
+            >
+              {knownCategories.map((c) => (
+                <option key={c} value={c} className="bg-[#111]">{c}</option>
+              ))}
+              <option value="__new__" className="bg-[#111]">+ Nueva categoría...</option>
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#555]" />
+          </div>
+        ) : (
           <div className="flex gap-2">
             <input
-              value={form.sku}
-              onChange={(e) => setForm({ ...form, sku: e.target.value })}
-              placeholder="Opcional"
-              className="h-12 flex-1 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder="Nombre de categoría"
+              autoFocus
+              className="h-12 flex-1 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:border-[#10b981]/50 focus:outline-none"
             />
-            {onScanSku && (
-              <button
-                type="button"
-                onClick={onScanSku}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[#10b981] active:bg-white/10"
-              >
-                <ScanLine size={18} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={cancelNewCategory}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[#888] active:bg-white/10"
+            >
+              <X size={16} />
+            </button>
           </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium uppercase tracking-wider text-[#888]">Categoría</label>
-          <input
-            value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            placeholder="General"
-            className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-[#444] focus:outline-none"
-          />
-        </div>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <CurrencyInput label="Precio de costo" value={form.cost_price} onChange={(v) => setForm({ ...form, cost_price: v })} />
